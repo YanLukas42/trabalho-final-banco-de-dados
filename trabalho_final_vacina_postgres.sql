@@ -6,19 +6,21 @@
 -- ============================================================
 
 -- ============================================================
--- ITEM 1: MODELO DE DADOS NA 3FN
+-- ITEM 1: MODELO DE DADOS NA 3ª FORMA NORMAL (3FN)
 -- Entidades: fabricante, vacina, lote, paciente, vacinador, vacinacao
--- 3FN: sem dependências parciais nem transitivas
+-- 3FN garantida:
+--   - Sem dependências parciais   (todas as colunas dependem da PK completa)
+--   - Sem dependências transitivas (colunas dependem apenas da PK)
 -- ============================================================
 
-DROP TABLE IF EXISTS vacinacao              CASCADE;
-DROP TABLE IF EXISTS estoque_vacina         CASCADE;
-DROP TABLE IF EXISTS estoque_vacina_hist    CASCADE;
-DROP TABLE IF EXISTS lote                   CASCADE;
-DROP TABLE IF EXISTS vacina                 CASCADE;
-DROP TABLE IF EXISTS fabricante             CASCADE;
-DROP TABLE IF EXISTS vacinador              CASCADE;
-DROP TABLE IF EXISTS paciente               CASCADE;
+DROP TABLE IF EXISTS vacinacao           CASCADE;
+DROP TABLE IF EXISTS estoque_vacina      CASCADE;
+DROP TABLE IF EXISTS estoque_vacina_hist CASCADE;
+DROP TABLE IF EXISTS lote                CASCADE;
+DROP TABLE IF EXISTS vacina              CASCADE;
+DROP TABLE IF EXISTS fabricante          CASCADE;
+DROP TABLE IF EXISTS vacinador           CASCADE;
+DROP TABLE IF EXISTS paciente            CASCADE;
 
 -- ============================================================
 -- CRIAÇÃO DAS TABELAS (DDL)
@@ -31,11 +33,14 @@ CREATE TABLE fabricante (
     cnpj           CHAR(18)      UNIQUE NOT NULL
 );
 
+-- NOTA: id_fabricante permite NULL para demonstrar FULL JOIN (item 13).
+--       Vacina sem fabricante será inserida apenas antes do FULL JOIN,
+--       para não interferir no NOT EXISTS (item 5).
 CREATE TABLE vacina (
     id_vacina      SERIAL        PRIMARY KEY,
     nome           VARCHAR(100)  NOT NULL,
     tipo           VARCHAR(50)   NOT NULL,
-    id_fabricante  INT           NULL,  -- NULL para FULL JOIN com NULLs
+    id_fabricante  INT           NULL,
     CONSTRAINT fk_vacina_fabricante FOREIGN KEY (id_fabricante)
         REFERENCES fabricante(id_fabricante)
 );
@@ -47,7 +52,7 @@ CREATE TABLE lote (
     data_fabricacao DATE         NOT NULL,
     data_validade   DATE         NOT NULL,
     quantidade      INT          NOT NULL,
-    -- ITEM 12: CONSTRAINT CHECK
+    -- ITEM 12: CONSTRAINT CHECK – impede quantidade > 100
     CONSTRAINT ck_lote_quantidade CHECK (quantidade <= 100),
     CONSTRAINT fk_lote_vacina FOREIGN KEY (id_vacina)
         REFERENCES vacina(id_vacina)
@@ -81,9 +86,10 @@ CREATE TABLE vacinacao (
 );
 
 -- ============================================================
--- ITEM 3: CARGA DE DADOS (mínimo 5 ocorrências por tabela)
+-- ITEM 3: IMPORTAÇÃO DE DADOS (mínimo 5 ocorrências por tabela)
 -- ============================================================
 
+-- 6 fabricantes
 INSERT INTO fabricante (nome, pais_origem, cnpj) VALUES
 ('Pfizer-BioNTech',    'EUA',         '60.396.060/0001-00'),
 ('Janssen',            'Bélgica',     '11.435.917/0001-00'),
@@ -92,23 +98,28 @@ INSERT INTO fabricante (nome, pais_origem, cnpj) VALUES
 ('Moderna',            'EUA',         '05.846.180/0001-00'),
 ('Fiocruz',            'Brasil',      '33.781.055/0001-00');
 
+-- 6 vacinas – TODAS com fabricante vinculado neste momento.
+-- [CORREÇÃO BUG 1]: vacina 6 agora pertence ao Fiocruz (id=6).
+-- A vacina com id_fabricante=NULL (para FULL JOIN) é inserida separadamente no item 13.
 INSERT INTO vacina (nome, tipo, id_fabricante) VALUES
-('Comirnaty',          'mRNA',             1),
-('Janssen COVID-19',   'Vetor Viral',      2),
-('Vaxzevria',          'Vetor Viral',      3),
-('CoronaVac',          'Viral Inativada',  4),
-('Spikevax',           'mRNA',             5),
-('VacSem Fabricante',  'Experimental',     NULL); -- sem fabricante (para FULL JOIN)
+('Comirnaty',             'mRNA',             1),  -- Pfizer
+('Janssen COVID-19',      'Vetor Viral',      2),  -- Janssen
+('Vaxzevria',             'Vetor Viral',      3),  -- AstraZeneca
+('CoronaVac',             'Viral Inativada',  4),  -- Sinovac
+('Spikevax',              'mRNA',             5),  -- Moderna
+('Vacina Fiocruz/Butantan','Viral Inativada', 6);  -- Fiocruz
 
+-- 7 lotes (3 vencidos, 2 vencendo em breve, 2 válidos)
 INSERT INTO lote (codigo_lote, id_vacina, data_fabricacao, data_validade, quantidade) VALUES
-('LOT-PFZ-001', 1, '2023-01-10', '2023-06-10',                         80),  -- vencido
-('LOT-PFZ-002', 1, '2024-05-01', '2025-01-01',                         60),  -- vencido
-('LOT-JNS-001', 2, '2023-03-15', '2023-09-15',                         50),  -- vencido
-('LOT-AZ-001',  3, '2024-06-01', CURRENT_DATE + INTERVAL '20 days',    90),  -- vence em 20 dias
-('LOT-SIN-001', 4, '2024-04-20', CURRENT_DATE + INTERVAL '25 days',    70),  -- vence em 25 dias
+('LOT-PFZ-001', 1, '2023-01-10', '2023-06-10',                         80),  -- vencido >30d
+('LOT-PFZ-002', 1, '2024-05-01', '2025-01-01',                         60),  -- vencido >30d
+('LOT-JNS-001', 2, '2023-03-15', '2023-09-15',                         50),  -- vencido >30d
+('LOT-AZ-001',  3, '2024-06-01', CURRENT_DATE + INTERVAL '20 days',    90),  -- vence em 20d
+('LOT-SIN-001', 4, '2024-04-20', CURRENT_DATE + INTERVAL '25 days',    70),  -- vence em 25d
 ('LOT-MOD-001', 5, '2024-07-01', CURRENT_DATE + INTERVAL '180 days',   40),  -- válido
 ('LOT-FIO-001', 6, '2024-08-01', CURRENT_DATE + INTERVAL '365 days',  100);  -- válido
 
+-- 6 pacientes
 INSERT INTO paciente (nome, cpf, nascimento, telefone) VALUES
 ('Ana Lima',       '111.111.111-11', '1985-03-20', '21-91111-1111'),
 ('Bruno Souza',    '222.222.222-22', '1990-07-14', '21-92222-2222'),
@@ -117,6 +128,7 @@ INSERT INTO paciente (nome, cpf, nascimento, telefone) VALUES
 ('Elisa Castro',   '555.555.555-55', '1995-09-18', '21-95555-5555'),
 ('Felipe Rocha',   '666.666.666-66', '1988-06-22', '21-96666-6666');
 
+-- 5 vacinadores
 INSERT INTO vacinador (nome, coren, especialidade) VALUES
 ('Dra. Maria Oliveira', 'COREN-RJ-123456', 'Enfermagem'),
 ('Dr. João Pedro',      'COREN-RJ-234567', 'Técnico de Enfermagem'),
@@ -124,13 +136,16 @@ INSERT INTO vacinador (nome, coren, especialidade) VALUES
 ('Tec. Carlos Ramos',   'COREN-RJ-456789', 'Técnico de Enfermagem'),
 ('Enf. Rita Nunes',     'COREN-RJ-567890', 'Enfermagem');
 
--- Ana Lima tomou vacinas de TODOS os 5 fabricantes (para NOT EXISTS)
+-- [CORREÇÃO BUG 1]: Ana Lima agora tem vacinação dos 6 fabricantes (lotes 1,3,4,5,6,7)
 INSERT INTO vacinacao (id_paciente, id_lote, id_vacinador, data_vacinacao, dose) VALUES
-(1, 1, 1, '2022-01-10', 1),
-(1, 3, 2, '2022-01-10', 1),
-(1, 4, 3, '2022-02-01', 1),
-(1, 5, 1, '2022-02-15', 1),
-(1, 6, 4, '2022-03-01', 1),
+-- Ana Lima: cobre TODOS os 6 fabricantes
+(1, 1, 1, '2022-01-10', 1),  -- Pfizer (lote 1)
+(1, 3, 2, '2022-01-10', 1),  -- Janssen (lote 3)
+(1, 4, 3, '2022-02-01', 1),  -- AstraZeneca (lote 4)
+(1, 5, 1, '2022-02-15', 1),  -- Sinovac (lote 5)
+(1, 6, 4, '2022-03-01', 1),  -- Moderna (lote 6)
+(1, 7, 5, '2022-03-20', 1),  -- Fiocruz (lote 7) ← adicionado
+-- Demais pacientes (parcial):
 (2, 2, 2, '2022-01-20', 1),
 (2, 4, 5, '2022-02-20', 1),
 (3, 1, 3, '2022-01-25', 1),
@@ -139,8 +154,18 @@ INSERT INTO vacinacao (id_paciente, id_lote, id_vacinador, data_vacinacao, dose)
 (6, 2, 5, '2022-01-30', 1),
 (3, 4, 2, '2022-04-01', 2);
 
+-- ITEM 3: EXPORTAÇÃO DE DADOS
+-- [CORREÇÃO BUG 2]: exportação agora incluída (COPY para CSV)
+-- No Docker, os arquivos são gerados dentro do container em /tmp/
+COPY fabricante TO '/tmp/export_fabricante.csv' WITH (FORMAT CSV, HEADER);
+COPY vacina     TO '/tmp/export_vacina.csv'     WITH (FORMAT CSV, HEADER);
+COPY lote       TO '/tmp/export_lote.csv'       WITH (FORMAT CSV, HEADER);
+COPY paciente   TO '/tmp/export_paciente.csv'   WITH (FORMAT CSV, HEADER);
+COPY vacinador  TO '/tmp/export_vacinador.csv'  WITH (FORMAT CSV, HEADER);
+COPY vacinacao  TO '/tmp/export_vacinacao.csv'  WITH (FORMAT CSV, HEADER);
+
 -- ============================================================
--- ITEM 4: LISTAR TABELAS COM CARDINALIDADES
+-- ITEM 4: LISTAR TABELAS COM NOMES E CARDINALIDADES
 -- ============================================================
 SELECT tabela, cardinalidade FROM (
     SELECT 'fabricante' AS tabela, COUNT(*) AS cardinalidade FROM fabricante UNION ALL
@@ -153,77 +178,87 @@ SELECT tabela, cardinalidade FROM (
 
 -- ============================================================
 -- ITEM 5: SUB-SELECT COM NOT EXISTS
--- Pacientes que tomaram vacina de TODOS os fabricantes
+-- Listar Pacientes que tomaram vacina de TODOS os fabricantes.
+-- Requer ao menos 1 resultado (Ana Lima cobre os 6 fabricantes).
 -- ============================================================
-SELECT p.nome AS paciente
+-- [CORREÇÃO BUG 1]: com vacina 6 vinculada ao Fiocruz e vacinação da Ana Lima
+-- no lote 7, a query agora retorna corretamente "Ana Lima".
+SELECT p.nome AS "Paciente vacinado por todos os fabricantes"
 FROM paciente p
 WHERE NOT EXISTS (
+    -- Existe algum fabricante para o qual este paciente NÃO tem vacinação?
     SELECT 1 FROM fabricante f
     WHERE NOT EXISTS (
         SELECT 1
         FROM vacinacao vc
-        INNER JOIN lote    l  ON vc.id_lote       = l.id_lote
-        INNER JOIN vacina  va ON l.id_vacina       = va.id_vacina
+        INNER JOIN lote   l  ON vc.id_lote    = l.id_lote
+        INNER JOIN vacina va ON l.id_vacina   = va.id_vacina
         WHERE va.id_fabricante = f.id_fabricante
           AND vc.id_paciente   = p.id_paciente
     )
 );
 
 -- ============================================================
--- ITEM 6: TRANSAÇÕES - COMMIT e ROLLBACK
+-- ITEM 6: TRANSAÇÕES — COMMIT e ROLLBACK
 -- ============================================================
 
--- Cenário A: COMMIT (persistência)
+-- Cenário A: UPDATE com COMMIT → dado persiste
 BEGIN;
     UPDATE paciente SET telefone = '21-99999-0001' WHERE id_paciente = 1;
 COMMIT;
+-- Confirma persistência após COMMIT:
 SELECT id_paciente, nome, telefone FROM paciente WHERE id_paciente = 1;
 
--- Cenário B: ROLLBACK (desfaz alterações)
+-- Cenário B: UPDATE com ROLLBACK → dado volta ao original
 BEGIN;
     UPDATE paciente SET nome = 'NOME ALTERADO - ROLLBACK TESTE' WHERE id_paciente = 2;
-    -- Antes do rollback:
+    -- Estado durante a transação (antes do rollback):
     SELECT id_paciente, nome FROM paciente WHERE id_paciente = 2;
 ROLLBACK;
--- Após rollback (nome original restaurado):
+-- Confirma que o nome voltou ao original após ROLLBACK:
 SELECT id_paciente, nome FROM paciente WHERE id_paciente = 2;
 
 -- ============================================================
--- ITEM 7: CHAVE ESTRANGEIRA - erro ao inserir vacina com fabricante inexistente
+-- ITEM 7: SUPORTE A CHAVE ESTRANGEIRA
+-- Demonstrar erro ao inserir Vacina com Fabricante inexistente
 -- ============================================================
 DO $$
 BEGIN
     INSERT INTO vacina (nome, tipo, id_fabricante)
-    VALUES ('Vacina Fantasma', 'Desconhecido', 9999);
-    RAISE NOTICE 'Inserção bem-sucedida (não deveria ocorrer)';
+    VALUES ('Vacina Fantasma', 'Desconhecido', 9999);  -- id 9999 não existe
+    RAISE NOTICE 'Inserção bem-sucedida (ERRO: não deveria ocorrer)';
 EXCEPTION
     WHEN foreign_key_violation THEN
-        RAISE NOTICE 'ERRO DE CHAVE ESTRANGEIRA: %', SQLERRM;
+        RAISE NOTICE 'ERRO DE CHAVE ESTRANGEIRA CAPTURADO: %', SQLERRM;
 END;
 $$;
 
 -- ============================================================
--- ITEM 8: VIEW - Lotes com data vencida
+-- ITEM 8: VIEW — Todos os Lotes com data vencida
 -- ============================================================
 CREATE OR REPLACE VIEW vw_lotes_vencidos AS
     SELECT
         l.id_lote,
         l.codigo_lote,
         va.nome                          AS vacina,
-        COALESCE(f.nome,'Sem Fab.')      AS fabricante,
+        COALESCE(f.nome, 'Sem Fab.')     AS fabricante,
         l.data_validade,
         l.quantidade,
         (CURRENT_DATE - l.data_validade) AS dias_vencido
     FROM lote l
     INNER JOIN vacina     va ON l.id_vacina      = va.id_vacina
-    LEFT  JOIN fabricante f  ON va.id_fabricante  = f.id_fabricante
+    LEFT  JOIN fabricante f  ON va.id_fabricante = f.id_fabricante
     WHERE l.data_validade < CURRENT_DATE;
 
+-- Demonstração da VIEW:
 SELECT * FROM vw_lotes_vencidos;
 
 -- ============================================================
--- ITEM 9: STORED PROCEDURE (FUNCTION no PostgreSQL)
--- Pacientes que tomaram vacina vencida, com fabricante e lote
+-- ITEM 9: STORED PROCEDURE
+-- Pacientes que tomaram Vacina Vencida, com Fabricante e Lote.
+-- NOTA: PostgreSQL usa FUNCTION (retorna TABLE) no lugar de PROCEDURE
+-- quando há retorno de conjunto de dados. CREATE PROCEDURE existe no
+-- PG 11+, mas não suporta RETURNS TABLE — por isso usamos FUNCTION.
 -- ============================================================
 CREATE OR REPLACE FUNCTION sp_pacientes_vacina_vencida()
 RETURNS TABLE (
@@ -250,16 +285,18 @@ RETURNS TABLE (
     ORDER BY p.nome;
 $$;
 
+-- Demonstração:
 SELECT * FROM sp_pacientes_vacina_vencida();
 
 -- ============================================================
--- ITEM 10: TRIGGER - Atualiza data_vacinacao em todo INSERT
+-- ITEM 10: TRIGGER
+-- Atualizar data_vacinacao toda vez que houver inclusão de Vacinação
 -- ============================================================
 CREATE OR REPLACE FUNCTION fn_atualiza_data_vacinacao()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     NEW.data_vacinacao := NOW();
-    RAISE NOTICE 'Trigger disparado: data_vacinacao = %', NEW.data_vacinacao;
+    RAISE NOTICE 'Trigger disparado: data_vacinacao atualizada para %', NEW.data_vacinacao;
     RETURN NEW;
 END;
 $$;
@@ -269,19 +306,24 @@ CREATE TRIGGER trg_atualiza_data_vacinacao
 BEFORE INSERT ON vacinacao
 FOR EACH ROW EXECUTE FUNCTION fn_atualiza_data_vacinacao();
 
--- Demonstração: data antiga (2020) será substituída pelo trigger
+-- Demonstração: passamos data '2020-01-01', trigger substitui por NOW()
 INSERT INTO vacinacao (id_paciente, id_lote, id_vacinador, data_vacinacao, dose)
-VALUES (4, 6, 3, '2020-01-01 00:00:00', 1);
+VALUES (4, 7, 3, '2020-01-01 00:00:00', 2);
 
-SELECT id_vacinacao, data_vacinacao FROM vacinacao ORDER BY id_vacinacao DESC LIMIT 1;
+SELECT id_vacinacao, data_vacinacao,
+       '(data 2020 foi substituída pelo trigger)' AS observacao
+FROM vacinacao ORDER BY id_vacinacao DESC LIMIT 1;
 
 -- ============================================================
--- ITEM 11: UNION
--- Lotes vencendo nos próximos 30 dias UNION vencidos há até 30 dias
+-- ITEM 11: UNIONS
+-- Lotes com vencimento nos próximos 30 dias
+-- UNION
+-- Lotes vencidos há até 30 dias
+-- [CORREÇÃO BUG 5]: > CURRENT_DATE (não >=) para não incluir lotes vencendo hoje
 -- ============================================================
 SELECT codigo_lote, data_validade, 'Vence em 30 dias'   AS status_lote
 FROM lote
-WHERE data_validade >= CURRENT_DATE
+WHERE data_validade > CURRENT_DATE
   AND data_validade <= CURRENT_DATE + INTERVAL '30 days'
 
 UNION
@@ -294,28 +336,39 @@ WHERE data_validade < CURRENT_DATE
 ORDER BY data_validade;
 
 -- ============================================================
--- ITEM 12: CONSTRAINT CHECK - demonstrar violação (qtd > 100)
+-- ITEM 12: CONSTRAINT CHECK
+-- Impedir Lotes cuja Quantidade seja maior que 100 — mostrar violação
 -- ============================================================
 DO $$
 BEGIN
     INSERT INTO lote (codigo_lote, id_vacina, data_fabricacao, data_validade, quantidade)
     VALUES ('LOT-ERRO-001', 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '1 year', 150);
-    RAISE NOTICE 'Inserção bem-sucedida (não deveria ocorrer)';
+    RAISE NOTICE 'Inserção bem-sucedida (ERRO: não deveria ocorrer)';
 EXCEPTION
     WHEN check_violation THEN
-        RAISE NOTICE 'ERRO DE CONSTRAINT CHECK: %', SQLERRM;
+        RAISE NOTICE 'ERRO DE CONSTRAINT CHECK capturado: %', SQLERRM;
 END;
 $$;
 
+-- Confirma que o lote inválido NÃO foi inserido:
+SELECT COUNT(*) AS "Lotes com codigo LOT-ERRO-001 (deve ser 0)"
+FROM lote WHERE codigo_lote = 'LOT-ERRO-001';
+
 -- ============================================================
--- ITEM 13: FULL JOIN - Fabricante x Vacina com NULLs nos dois lados
+-- ITEM 13: FULL JOIN
+-- Unir Fabricante e Vacina garantindo NULL nos dois lados
 -- ============================================================
 
--- Fabricante sem vacina (gera NULL no lado da Vacina)
+-- Lado 1: Fabricante sem vacina (NULL no lado da Vacina)
 INSERT INTO fabricante (nome, pais_origem, cnpj)
 VALUES ('BioFarma Test', 'Brasil', '99.999.999/0001-99');
 
--- Vacina sem fabricante já existe (id_fabricante = NULL, inserida na carga)
+-- Lado 2: Vacina sem fabricante (NULL no lado do Fabricante)
+-- [NOTA]: inserida AQUI, após o NOT EXISTS (item 5), para não interferir naquele resultado
+INSERT INTO vacina (nome, tipo, id_fabricante)
+VALUES ('VacSem Fabricante', 'Experimental', NULL);
+
+-- FULL JOIN: mostra todos os pares, com NULLs em ambos os lados
 SELECT
     f.id_fabricante,
     f.nome   AS fabricante,
@@ -328,15 +381,26 @@ ORDER BY f.id_fabricante NULLS LAST, va.id_vacina NULLS LAST;
 
 -- ============================================================
 -- ITEM 14: TABELA TEMPORÁRIA
--- PostgreSQL usa TEMP TABLE de sessão (equivalente ao ##GlobalTemp)
+-- [CORREÇÃO BUG 3]: PostgreSQL não possui Tabela Temporária Global (##Tabela
+-- do SQL Server). O equivalente mais próximo é a TEMP TABLE de sessão:
+-- visível para toda a conexão atual, destruída ao encerrar a sessão.
+-- Em ambientes multi-sessão, a alternativa é uma tabela UNLOGGED permanente.
 -- ============================================================
 CREATE TEMP TABLE temp_fabricantes AS
     SELECT * FROM fabricante;
 
+-- Verifica que a tabela temporária existe no catálogo (pg_class)
+SELECT relname AS tabela_temporaria, relpersistence
+FROM pg_class
+WHERE relname = 'temp_fabricantes';
+-- relpersistence = 't' significa TEMP (temporária)
+
+-- Demonstração de uso:
 SELECT * FROM temp_fabricantes;
 
 -- ============================================================
--- ITEM 15A: CURSOR 1 - Data, Paciente, Lote e Fabricante
+-- ITEM 15A: CURSOR 1
+-- Saída com Data, Pacientes, Lotes e Fabricantes
 -- ============================================================
 DO $$
 DECLARE
@@ -368,11 +432,16 @@ END;
 $$;
 
 -- ============================================================
--- ITEM 15B: CURSOR 2 - Vacinadores que também tomaram vacina
+-- ITEM 15B: CURSOR 2
+-- Listar Vacinadores que tomaram vacina, mostrando tipo,
+-- fabricante e data de validade da vacina
 -- ============================================================
+
+-- Inserir vacinador como paciente (mesmo nome) para o cenário funcionar
 INSERT INTO paciente (nome, cpf, nascimento, telefone)
 VALUES ('Dra. Maria Oliveira', '777.777.777-77', '1980-05-10', '21-97777-7777');
 
+-- Vacinação da "Dra. Maria Oliveira" como paciente (id_paciente=7)
 INSERT INTO vacinacao (id_paciente, id_lote, id_vacinador, data_vacinacao, dose)
 VALUES (7, 5, 2, NOW(), 1);
 
@@ -380,21 +449,21 @@ DO $$
 DECLARE
     cur CURSOR FOR
         SELECT
-            vd.nome                                 AS vacinador,
-            va.tipo                                 AS tipo_vacina,
-            COALESCE(f.nome, 'Sem Fabricante')      AS fabricante,
-            TO_CHAR(l.data_validade, 'DD/MM/YYYY')  AS validade
+            vd.nome                                AS vacinador,
+            va.tipo                                AS tipo_vacina,
+            COALESCE(f.nome, 'Sem Fabricante')     AS fabricante,
+            TO_CHAR(l.data_validade, 'DD/MM/YYYY') AS validade
         FROM vacinacao vc
         INNER JOIN paciente   p  ON vc.id_paciente  = p.id_paciente
         INNER JOIN vacinador  vd ON vc.id_vacinador  = vd.id_vacinador
         INNER JOIN lote       l  ON vc.id_lote       = l.id_lote
         INNER JOIN vacina     va ON l.id_vacina      = va.id_vacina
         LEFT  JOIN fabricante f  ON va.id_fabricante = f.id_fabricante
-        WHERE p.nome = vd.nome
+        WHERE p.nome = vd.nome   -- vacinador que também é paciente (mesmo nome)
         ORDER BY vd.nome;
     r RECORD;
 BEGIN
-    RAISE NOTICE '--- VACINADORES QUE TAMBÉM SÃO PACIENTES ---';
+    RAISE NOTICE '--- VACINADORES QUE TAMBÉM TOMARAM VACINA ---';
     RAISE NOTICE '%', REPEAT('-', 65);
     OPEN cur;
     LOOP
@@ -409,8 +478,10 @@ $$;
 
 -- ============================================================
 -- ITEM 16: TABELA TEMPORAL
--- PostgreSQL não tem FOR SYSTEM_TIME nativamente.
--- Simulação com history table + trigger (padrão SCD tipo 4).
+-- Criar tabela temporal, alimentar em tempos diferentes,
+-- consultar por intervalo de tempo.
+-- PostgreSQL não possui FOR SYSTEM_TIME nativamente (recurso do SQL Server).
+-- Implementamos o padrão equivalente: history table + trigger BEFORE UPDATE.
 -- ============================================================
 
 CREATE TABLE estoque_vacina (
@@ -429,7 +500,7 @@ CREATE TABLE estoque_vacina_hist (
     valid_to    TIMESTAMP  NOT NULL
 );
 
--- Trigger que move a linha antiga para o histórico no UPDATE
+-- Trigger: move versão antiga para histórico a cada UPDATE
 CREATE OR REPLACE FUNCTION fn_hist_estoque()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -447,23 +518,34 @@ CREATE TRIGGER trg_hist_estoque
 BEFORE UPDATE ON estoque_vacina
 FOR EACH ROW EXECUTE FUNCTION fn_hist_estoque();
 
--- Alimentar dados em T1
+-- Alimentar dados (T1)
 INSERT INTO estoque_vacina (id_vacina, quantidade) VALUES (1, 80), (2, 50);
 
--- Simular passagem de tempo e atualizar (T2)
+-- [CORREÇÃO BUG 4]: capturamos o timestamp de início para usar no filtro final,
+-- garantindo que o intervalo seja sempre relativo ao início do bloco.
 DO $$
+DECLARE
+    v_inicio TIMESTAMP := NOW();
 BEGIN
+    -- Gravar o timestamp de início para uso posterior
+    CREATE TEMP TABLE IF NOT EXISTS _ts_inicio (ts TIMESTAMP);
+    DELETE FROM _ts_inicio;
+    INSERT INTO _ts_inicio VALUES (v_inicio);
+
+    -- T2: atualizar após 1 segundo
     PERFORM pg_sleep(1);
     UPDATE estoque_vacina SET quantidade = 60 WHERE id_vacina = 1;
     UPDATE estoque_vacina SET quantidade = 30 WHERE id_vacina = 2;
+
+    -- T3: atualizar após mais 1 segundo
     PERFORM pg_sleep(1);
-    -- T3: segunda atualização
     UPDATE estoque_vacina SET quantidade = 45 WHERE id_vacina = 1;
 END;
 $$;
 
--- Estado atual
-SELECT ev.id_estoque, va.nome AS vacina, ev.quantidade, ev.valid_from AS vigente_desde
+-- Estado atual (versão mais recente de cada registro)
+SELECT ev.id_estoque, va.nome AS vacina, ev.quantidade,
+       ev.valid_from AS vigente_desde
 FROM estoque_vacina ev
 INNER JOIN vacina va ON ev.id_vacina = va.id_vacina;
 
@@ -482,13 +564,14 @@ INNER JOIN vacina va ON ev.id_vacina = va.id_vacina
 
 ORDER BY id_estoque, valid_from;
 
--- Filtrar por intervalo de tempo (últimos 10 segundos)
-SELECT h.id_estoque, va.nome AS vacina, h.quantidade, h.valid_from, h.valid_to
+-- Filtrar por intervalo de tempo (a partir do início do bloco acima)
+SELECT h.id_estoque, va.nome AS vacina, h.quantidade,
+       h.valid_from, h.valid_to
 FROM estoque_vacina_hist h
 INNER JOIN vacina va ON h.id_vacina = va.id_vacina
-WHERE h.valid_from >= NOW() - INTERVAL '10 seconds'
+WHERE h.valid_from >= (SELECT ts FROM _ts_inicio)
 ORDER BY h.valid_from;
 
 -- ============================================================
--- FIM DO TRABALHO FINAL - PostgreSQL
+-- FIM DO TRABALHO FINAL — PostgreSQL 16
 -- ============================================================
