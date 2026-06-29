@@ -155,14 +155,16 @@ INSERT INTO vacinacao (id_paciente, id_lote, id_vacinador, data_vacinacao, dose)
 (3, 4, 2, '2022-04-01', 2);
 
 -- ITEM 3: EXPORTAÇÃO DE DADOS
--- [CORREÇÃO BUG 2]: exportação agora incluída (COPY para CSV)
--- No Docker, os arquivos são gerados dentro do container em /tmp/
-COPY fabricante TO '/tmp/export_fabricante.csv' WITH (FORMAT CSV, HEADER);
-COPY vacina     TO '/tmp/export_vacina.csv'     WITH (FORMAT CSV, HEADER);
-COPY lote       TO '/tmp/export_lote.csv'       WITH (FORMAT CSV, HEADER);
-COPY paciente   TO '/tmp/export_paciente.csv'   WITH (FORMAT CSV, HEADER);
-COPY vacinador  TO '/tmp/export_vacinador.csv'  WITH (FORMAT CSV, HEADER);
-COPY vacinacao  TO '/tmp/export_vacinacao.csv'  WITH (FORMAT CSV, HEADER);
+-- COPY server-side exige superusuário no PostgreSQL.
+-- Para exportar os dados, execute os comandos abaixo via psql (\COPY é client-side):
+-- \COPY fabricante TO '/caminho/export_fabricante.csv' WITH (FORMAT CSV, HEADER)
+-- \COPY vacina     TO '/caminho/export_vacina.csv'     WITH (FORMAT CSV, HEADER)
+-- \COPY lote       TO '/caminho/export_lote.csv'       WITH (FORMAT CSV, HEADER)
+-- \COPY paciente   TO '/caminho/export_paciente.csv'   WITH (FORMAT CSV, HEADER)
+-- \COPY vacinador  TO '/caminho/export_vacinador.csv'  WITH (FORMAT CSV, HEADER)
+-- \COPY vacinacao  TO '/caminho/export_vacinacao.csv'  WITH (FORMAT CSV, HEADER)
+--
+-- Ou use o script export.sh na raiz do projeto.
 
 -- ============================================================
 -- ITEM 4: LISTAR TABELAS COM NOMES E CARDINALIDADES
@@ -183,12 +185,18 @@ SELECT tabela, cardinalidade FROM (
 -- ============================================================
 -- [CORREÇÃO BUG 1]: com vacina 6 vinculada ao Fiocruz e vacinação da Ana Lima
 -- no lote 7, a query agora retorna corretamente "Ana Lima".
+-- [CORREÇÃO]: a subquery de fabricantes filtra apenas aqueles que possuem
+-- pelo menos uma vacina cadastrada, evitando que fabricantes sem vacinas
+-- (ex: BioFarma Test, inserido no item 13) invalidem o resultado.
 SELECT p.nome AS "Paciente vacinado por todos os fabricantes"
 FROM paciente p
 WHERE NOT EXISTS (
-    -- Existe algum fabricante para o qual este paciente NÃO tem vacinação?
+    -- Existe algum fabricante COM vacina para o qual este paciente NÃO tem vacinação?
     SELECT 1 FROM fabricante f
-    WHERE NOT EXISTS (
+    WHERE EXISTS (
+        SELECT 1 FROM vacina va2 WHERE va2.id_fabricante = f.id_fabricante
+    )
+    AND NOT EXISTS (
         SELECT 1
         FROM vacinacao vc
         INNER JOIN lote   l  ON vc.id_lote    = l.id_lote
@@ -441,9 +449,10 @@ $$;
 INSERT INTO paciente (nome, cpf, nascimento, telefone)
 VALUES ('Dra. Maria Oliveira', '777.777.777-77', '1980-05-10', '21-97777-7777');
 
--- Vacinação da "Dra. Maria Oliveira" como paciente (id_paciente=7)
+-- Vacinação da "Dra. Maria Oliveira" como paciente (id_paciente=7), aplicada por ela mesma (id_vacinador=1)
+-- Isso garante que p.nome = vd.nome seja verdadeiro no cursor
 INSERT INTO vacinacao (id_paciente, id_lote, id_vacinador, data_vacinacao, dose)
-VALUES (7, 5, 2, NOW(), 1);
+VALUES (7, 5, 1, NOW(), 1);
 
 DO $$
 DECLARE

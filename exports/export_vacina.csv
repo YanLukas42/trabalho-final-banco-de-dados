@@ -1,0 +1,8 @@
+id_vacina,nome,tipo,id_fabricante
+1,Comirnaty,mRNA,1
+2,Janssen COVID-19,Vetor Viral,2
+3,Vaxzevria,Vetor Viral,3
+4,CoronaVac,Viral Inativada,4
+5,Spikevax,mRNA,5
+6,Vacina Fiocruz/Butantan,Viral Inativada,6
+8,VacSem Fabricante,Experimental,
